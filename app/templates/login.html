@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+    <html>
+        <head>
+            <title>WebSSH</title>
+        </head>
+        <body>
+            <h1>WebSSH Login</h1>
+            <form>
+                    主机地址：<input type="text" id="host" value="localhost">
+                    用户名：<input type="text" id="username" value="dasg">
+                    端口：<input type="number" id="port" value="22">
+                    认证方式：<select id="auth_type">
+                        <option value="password">密码认证</option>
+                        <option value="key">密钥认证</option>
+                    </select>
+                    密码：<input type="password" id="password_input">
+                    密钥路径：<input type="text" id="key_path" value="~/.ssh/id_rsa">
+                    密钥：<textarea id="key_input"></textarea>
+                    <button type="button" onclick="connect()">连接</button>
+                </form>
+            <script>
+                function connect() {
+                    // 1. 收集表单数据
+                    var host = document.getElementById('host').value;
+                    var username = document.getElementById('username').value;
+                    var port = document.getElementById('port').value;
+                    var auth_type = document.getElementById('auth_type').value;
+
+                    // 2. 拼 URL 参数
+                    var params = 'host=' + encodeURIComponent(host) +
+                                '&username=' + encodeURIComponent(username) +
+                                '&port=' + encodeURIComponent(port) +
+                                '&auth_type=' + encodeURIComponent(auth_type);
+
+                    // 3. 加上密码或密钥
+                    if (auth_type === 'password') {
+                        var password = document.getElementById('password_input').value;
+                        params = params + '&password=' + encodeURIComponent(password);
+                    } else {
+                        var key_path = document.getElementById('key_path').value;
+                        var key_content = document.getElementById('key_input').value;
+                        if (key_content) {
+                            // 内容太长
+                            localStorage.setItem('ssh_key_content', key_content);
+                        }
+                        if (key_path) {
+                            params = params + '&key_path=' + encodeURIComponent(key_path);
+                        }
+                    }
+
+                    // 4. 跳转到终端页
+                    window.location.href = '/?' + params;
+                }
+                </script>
+        </body>
+    </html>

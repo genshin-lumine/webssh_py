@@ -10,6 +10,35 @@
                 const term = new Terminal({ rows: 30, cols: 100 });
                 term.open(document.getElementById('terminal'));
                 const ws = new WebSocket('ws://localhost:8080/ws');
+                ws.onopen = function() {
+                    // 解析 URL 参数
+                    var params = new URLSearchParams(window.location.search);
+
+                    // 构建连接数据
+                    var data ={
+                        host: params.get('host'),
+                        username: params.get('username'),
+                        port: parseInt(params.get('port')) || 22,
+                        auth_type: params.get('auth_type'),
+                        passphrase: ''       // 私钥密码，后续再加
+                    };
+                    
+                    // 根据认证方式补充字段
+                    if (data.auth_type === 'password') {
+                        data.password = params.get('password');
+                    } else {
+                        var keyContent = localStorage.getItem('ssh_key_content');
+                        if (keyContent) {
+                            data.key_content = keyContent;
+                            localStorage.removeItem('ssh_key_content'); // 使用后删除
+                        } else {
+                            data.key_path = params.get('key_path');
+                        }
+                    }
+
+                    // 发送数据
+                    ws.send(JSON.stringify(data));
+                };
                 term.onData(data => ws.send(data));
                 ws.onmessage = e => term.write(e.data);
             </script>
