@@ -1,56 +1,157 @@
 <!DOCTYPE html>
-    <html>
-        <head>
-            <title>WebSSH</title>
-        </head>
-        <body>
-            <h1>WebSSH Login</h1>
-            <form>
-                    主机地址：<input type="text" id="host" value="localhost">
-                    用户名：<input type="text" id="username" value="dasg">
-                    端口：<input type="number" id="port" value="22">
-                    认证方式：<select id="auth_type">
-                        <option value="password">密码认证</option>
-                        <option value="key">密钥认证</option>
-                    </select>
-                    密码：<input type="password" id="password_input">
-                    密钥路径：<input type="text" id="key_path" value="~/.ssh/id_rsa">
-                    密钥：<textarea id="key_input"></textarea>
-                    <button type="button" onclick="connect()">连接</button>
-                </form>
-            <script>
-                function connect() {
-                    // 1. 收集表单数据
-                    var host = document.getElementById('host').value;
-                    var username = document.getElementById('username').value;
-                    var port = document.getElementById('port').value;
-                    var auth_type = document.getElementById('auth_type').value;
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSSH | 登录到服务器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: radial-gradient(circle at top left, #1e293b, #0f172a);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
 
-                    // 2. 拼 URL 参数
-                    var params = 'host=' + encodeURIComponent(host) +
-                                '&username=' + encodeURIComponent(username) +
-                                '&port=' + encodeURIComponent(port) +
-                                '&auth_type=' + encodeURIComponent(auth_type);
+    <div class="glass-card p-8 rounded-2xl shadow-2xl w-full max-w-md mx-4">
+        <div class="text-center mb-8">
+            <div class="inline-block p-4 rounded-full bg-blue-500/20 mb-4">
+                <i class="fas fa-terminal text-3xl text-blue-400"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-white">WebSSH 连接</h1>
+            <p class="text-gray-400 text-sm mt-2">请输入远程服务器详细信息</p>
+        </div>
 
-                    // 3. 加上密码或密钥
-                    if (auth_type === 'password') {
-                        var password = document.getElementById('password_input').value;
-                        params = params + '&password=' + encodeURIComponent(password);
+        <form id="login-form" class="space-y-5">
+            <!-- 主机和端口 -->
+            <div class="flex gap-4">
+                <div class="flex-1">
+                    <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 ml-1">主机地址</label>
+                    <input type="text" name="host" placeholder="192.168.1.1" required
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:outline-none focus:border-blue-500 transition-all">
+                </div>
+                <div class="w-24">
+                    <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 ml-1">端口</label>
+                    <input type="number" name="port" value="22" required
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:outline-none focus:border-blue-500 transition-all">
+                </div>
+            </div>
+
+            <!-- 用户名 -->
+            <div>
+                <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 ml-1">用户名</label>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                        <i class="fas fa-user"></i>
+                    </span>
+                    <input type="text" name="username" placeholder="root" required
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:outline-none focus:border-blue-500 transition-all">
+                </div>
+            </div>
+
+            <!-- 认证方式 -->
+            <div>
+                <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 ml-1">认证方式</label>
+                <select id="auth_type"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:outline-none focus:border-blue-500">
+                    <option value="password">密码认证</option>
+                    <option value="key">密钥认证</option>
+                </select>
+            </div>
+
+            <!-- 密码输入（密码认证时显示） -->
+            <div id="password-section">
+                <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 ml-1">密码</label>
+                <input type="password" id="password_input" placeholder="••••••••"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:outline-none focus:border-blue-500 transition-all">
+            </div>
+
+            <!-- 密钥输入（密钥认证时显示，默认隐藏） -->
+            <div id="key-section" class="hidden space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 ml-1">私钥内容</label>
+                    <textarea id="key_input" rows="5" placeholder="粘贴私钥内容（-----BEGIN OPENSSH PRIVATE KEY----- ...）"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white text-xs font-mono focus:outline-none focus:border-blue-500"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 ml-1">或密钥路径</label>
+                    <input type="text" id="key_path" placeholder="~/.ssh/id_rsa（服务器上的路径）"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 ml-1">私钥密码（可选）</label>
+                    <input type="password" id="passphrase_input" placeholder="无密码可留空"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+
+            <!-- 提交按钮 -->
+            <button type="submit" 
+                class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-lg transform transition active:scale-95 mt-4">
+                立即连接
+            </button>
+        </form>
+
+
+        <script>
+            // 切换认证方式时，切换显示的输入区
+            document.getElementById('auth_type').addEventListener('change', function () {
+                var isKey = this.value === 'key';
+                document.getElementById('password-section').classList.toggle('hidden', isKey);
+                document.getElementById('key-section').classList.toggle('hidden', !isKey);
+            });
+
+            // 拦截表单提交
+            document.getElementById('login-form').addEventListener('submit', function (e) {
+                e.preventDefault();   // 关键：阻止浏览器默认的 POST 跳转
+
+                var host = document.querySelector('input[name="host"]').value.trim();
+                var port = document.querySelector('input[name="port"]').value;
+                var username = document.querySelector('input[name="username"]').value.trim();
+                var auth_type = document.getElementById('auth_type').value;
+
+                // 非敏感参数拼进 URL
+                var params = 'host=' + encodeURIComponent(host) +
+                            '&username=' + encodeURIComponent(username) +
+                            '&port=' + encodeURIComponent(port) +
+                            '&auth_type=' + encodeURIComponent(auth_type);
+
+                if (auth_type === 'password') {
+                    var password = document.getElementById('password_input').value;
+                    if (!password) { alert('请输入密码'); return; }
+                    localStorage.setItem('ssh_password', password);   // 敏感信息存 localStorage，不进 URL
+                } else {
+                    var keyContent = document.getElementById('key_input').value.trim();
+                    var keyPath = document.getElementById('key_path').value.trim();
+                    if (keyContent) {
+                        localStorage.setItem('ssh_key_content', keyContent);
+                    } else if (keyPath) {
+                        params += '&key_path=' + encodeURIComponent(keyPath);
                     } else {
-                        var key_path = document.getElementById('key_path').value;
-                        var key_content = document.getElementById('key_input').value;
-                        if (key_content) {
-                            // 内容太长
-                            localStorage.setItem('ssh_key_content', key_content);
-                        }
-                        if (key_path) {
-                            params = params + '&key_path=' + encodeURIComponent(key_path);
-                        }
+                        alert('请粘贴私钥内容或填写密钥路径');
+                        return;
                     }
-
-                    // 4. 跳转到终端页
-                    window.location.href = '/?' + params;
+                    localStorage.setItem('ssh_passphrase', document.getElementById('passphrase_input').value);
                 }
-                </script>
-        </body>
-    </html>
+
+                window.location.href = '/?' + params;   // 跳转到终端页
+            });
+        </script>
+
+        <p class="text-center text-gray-500 text-xs mt-6">
+            &copy; WebSSH Terminal. 安全加密连接.
+        </p>
+    </div>
+
+</body>
+</html>

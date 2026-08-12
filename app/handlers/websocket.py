@@ -23,7 +23,9 @@ async def websocket_handler(request):
         # 根据认证方式构建连接参数
         auth_params = build_auth_params(data)
         conn, chan, session, ws_to_ssh = await create_ssh_connection(
-            **common, **auth_params
+            **common, **auth_params,
+            cols=data.get("cols", 80),
+            rows=data.get("rows", 24)
         )
         await ws_to_ssh()
     except Exception as e:

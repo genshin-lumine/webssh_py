@@ -1,46 +1,198 @@
 <!DOCTYPE html>
-    <html>
-        <head>
-            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css" />
-        </head>
-        <body>
-            <div id="terminal" style="height:100vh"></div>
-            <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
-            <script>
-                const term = new Terminal({ rows: 30, cols: 100 });
-                term.open(document.getElementById('terminal'));
-                const ws = new WebSocket('ws://localhost:8080/ws');
-                ws.onopen = function() {
-                    // 解析 URL 参数
-                    var params = new URLSearchParams(window.location.search);
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>WebSSH | Terminal</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <!-- 引入 xterm.js 样式 (WebSSH 核心) -->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.1.0/css/xterm.css" />
+        <style>
+            body { background-color: #0f172a; }
+            #terminal-container {
+                height: calc(100vh - 64px);
+                padding: 10px;
+            }
+            /* 自定义滚动条 */
+            ::-webkit-scrollbar { width: 8px; }
+            ::-webkit-scrollbar-track { background: #1e293b; }
+            ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+            ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        </style>
+    </head>
+    <body class="overflow-hidden flex flex-col">
 
-                    // 构建连接数据
-                    var data ={
-                        host: params.get('host'),
-                        username: params.get('username'),
-                        port: parseInt(params.get('port')) || 22,
-                        auth_type: params.get('auth_type'),
-                        passphrase: ''       // 私钥密码，后续再加
-                    };
-                    
-                    // 根据认证方式补充字段
-                    if (data.auth_type === 'password') {
-                        data.password = params.get('password');
-                    } else {
-                        var keyContent = localStorage.getItem('ssh_key_content');
-                        if (keyContent) {
-                            data.key_content = keyContent;
-                            localStorage.removeItem('ssh_key_content'); // 使用后删除
-                        } else {
-                            data.key_path = params.get('key_path');
-                        }
-                    }
+        <!-- 顶部导航栏 -->
+        <header class="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-6 shrink-0">
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-terminal text-blue-500"></i>
+                    <span class="text-white font-bold tracking-tight">WebSSH <span class="text-blue-500">v1.0</span></span>
+                </div>
+                <div class="h-4 w-px bg-slate-700 mx-2"></div>
+                <div class="flex items-center text-sm">
+                    <span class="flex h-2 w-2 rounded-full bg-green-500 mr-2"></span>
+                    <span id="conn-info" class="text-gray-300">root@192.168.1.1:22</span>
+                </div>
+            </div>
 
-                    // 发送数据
-                    ws.send(JSON.stringify(data));
-                };
-                term.onData(data => ws.send(data));
-                ws.onmessage = e => term.write(e.data);
-            </script>
-        </body>
+            <div class="flex items-center space-x-4">
+                <button onclick="clearScreen()" title="清屏" class="text-gray-400 hover:text-white transition">
+                    <i class="fas fa-eraser"></i>
+                </button>
+                <button onclick="toggleFullscreen()" title="全屏" class="text-gray-400 hover:text-white transition">
+                    <i class="fas fa-expand"></i>
+                </button>
+                <button onclick="location.href='/login'" class="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center border border-red-500/20">
+                    <i class="fas fa-power-off mr-2"></i> 断开连接
+                </button>
+            </div>
+        </header>
+
+        <main class="flex flex-1 overflow-hidden">
+            <!-- 侧边栏 (可选，展示历史记录或文件) -->
+            <aside class="w-16 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-6 space-y-8">
+                <i class="fas fa-server text-blue-500 text-xl cursor-pointer"></i>
+                <i class="fas fa-folder text-slate-500 hover:text-white text-xl cursor-pointer"></i>
+                <i class="fas fa-cog text-slate-500 hover:text-white text-xl cursor-pointer"></i>
+            </aside>
+
+            <!-- 终端主体 -->
+            <div id="terminal-container" class="flex-1 bg-[#000000]">
+                <!-- 这里是 xterm.js 渲染的地方 -->
+                <div id="terminal" class="w-full h-full"></div>
+            </div>
+        </main>
+
+        <!-- 底部状态栏 -->
+        <footer class="h-8 bg-blue-600 flex items-center justify-between px-4 text-[10px] text-white font-mono uppercase tracking-widest">
+            <div>Connected to: SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5</div>
+            <div class="flex space-x-4">
+                <span>Latency: 24ms</span>
+                <span>UTF-8</span>
+            </div>
+        </footer>
+
+        <!-- 加载 xterm.js 脚本 -->
+        <script src="https://cdn.jsdelivr.net/npm/xterm@5.1.0/lib/xterm.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+
+        <script>
+            // ========== 1. 初始化终端 ==========
+            const term = new Terminal({
+                cursorBlink: true,
+                theme: {
+                    background: '#000000',
+                    foreground: '#ffffff'
+                },
+                fontSize: 14,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace'
+            });
+            term.open(document.getElementById('terminal'));
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            fitAddon.fit();
+
+            // 窗口大小变化、进入/退出全屏时，重新计算终端尺寸
+            window.addEventListener('resize', () => fitAddon.fit());
+            document.addEventListener('fullscreenchange', function () {
+                fitAddon.fit(); // 重新计算终端尺寸
+                const icon = document.querySelector('button[title="全屏"] i');
+                icon.className = document.fullscreenElement ? 'fas fa-compress' : 'fas fa-expand';
+            });
+
+
+            term.write('\x1b[32m正在连接服务器...\x1b[0m\r\n');
+
+            // ========== 2. 从 URL 参数读取连接信息 ==========
+            // 这些是登录页跳转时拼在 ? 后面的非敏感参数
+            const params = new URLSearchParams(window.location.search);
+            const data = {
+                host: params.get('host'),
+                username: params.get('username'),
+                port: parseInt(params.get('port')) || 22,
+                auth_type: params.get('auth_type'),
+                cols: term.cols,
+                rows: term.rows
+            };
+
+            // 直接打开本页、没有参数时，送回登录页
+            if (!data.host || !data.auth_type) {
+                location.href = '/login';
+            }
+
+            // 敏感信息从 localStorage 取（登录页存进去的），用完立即删除
+            if (data.auth_type === 'password') {
+                data.password = localStorage.getItem('ssh_password') || '';
+                localStorage.removeItem('ssh_password');
+            } else {
+                const keyContent = localStorage.getItem('ssh_key_content');
+                if (keyContent) {
+                    data.key_content = keyContent;
+                    localStorage.removeItem('ssh_key_content');
+                } else {
+                    data.key_path = params.get('key_path');
+                }
+                data.passphrase = localStorage.getItem('ssh_passphrase') || '';
+                localStorage.removeItem('ssh_passphrase');
+            }
+
+            // 顶部导航栏显示真实的连接目标
+            document.getElementById('conn-info').textContent =
+                data.username + '@' + data.host + ':' + data.port;
+
+            // ========== 3. 建立 WebSocket 连接 ==========
+            // 关键：不要写死 localhost:8080，用当前页面的地址
+            const wsProto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const ws = new WebSocket(wsProto + location.host + '/ws');
+
+            ws.onopen = function () {
+                ws.send(JSON.stringify(data));   // 连上后立刻把连接信息发给后端
+                ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+            };
+
+            ws.onmessage = function (e) {
+                term.write(e.data);              // SSH 的输出 -> 显示到终端
+            };
+
+            ws.onclose = function () {
+                term.write('\r\n\x1b[31m[连接已断开]\x1b[0m\r\n');
+            };
+
+            // 键盘输入 -> 发给后端
+            term.onData(function (d) {
+                if (ws.readyState === WebSocket.OPEN) {   // 防呆：没连上时不发
+                    ws.send(d);
+                }
+            });
+
+            // 终端尺寸变化（窗口拖拽、全屏等触发 fit）-> 通知后端调整 pty
+            term.onResize(function (size) {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+                }
+            });
+
+            // ========== 4. 顶部按钮功能 ==========
+            // 清屏：本地清空 + 给远程 shell 发 Ctrl+L 让它重绘提示符
+            function clearScreen() {
+                term.clear();                                // 清掉本地屏幕和滚动缓冲
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send('\x0c');                         // \x0c 就是 Ctrl+L 的字符编码
+                }
+            }
+
+            // 全屏：把终端容器切到浏览器全屏（按 ESC 自动退出）
+            function toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.getElementById('terminal-container').requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+        </script>
+
+    </body>
 </html>
